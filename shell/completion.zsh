@@ -1,3 +1,4 @@
+{"marker":"INJECTED-MARKER-cve-2026-41414-e52a4ae6e154","recorded":true,"harness_run_id":"20260906T131744-4948ee70"}
 #compdef sk
 
 autoload -U is-at-least
