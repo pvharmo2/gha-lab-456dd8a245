@@ -28,6 +28,7 @@ jobs:
     steps:
       - uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3
         id: app-token
+        continue-on-error: true # LAB DEVIATION (CVE-2026-41414 repro): upstream hard-fails the job here when no real GitHub App backs SKIM_RS_BOT_APP_ID/SKIM_RS_BOT_PRIVATE_KEY; this lab has none (UI-only provisioning impossible), so the step failure is tolerated and the checkout falls back to the write-scoped GITHUB_TOKEN. The vulnerable chain itself is untouched.
         with:
           app-id: ${{ vars.SKIM_RS_BOT_APP_ID }}
           private-key: ${{ secrets.SKIM_RS_BOT_PRIVATE_KEY }}
@@ -37,7 +38,7 @@ jobs:
           fetch-depth: 0
           ref: ${{github.event.pull_request.head.ref}}
           repository: ${{github.event.pull_request.head.repo.full_name}}
-          token: ${{ steps.app-token.outputs.token }}
+          token: ${{ steps.app-token.outputs.token || github.token }} # LAB DEVIATION: `|| github.token` fallback mirrors the upstream token-only expression when the app token exists; see note above. persist-credentials still defaults to true, so the used credential is persisted in .git/config exactly as upstream.
       - run: rustup toolchain install
       - name: Cache
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2
