@@ -1,0 +1,57 @@
+name: "Pull Requests"
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - labeled
+      - unlabeled
+
+jobs:
+  check:
+    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: thehanimo/pr-title-checker@7fbfe05602bdd86f926d3fb3bccb6f3aed43bc70 # v1.4.3
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          pass_on_octokit_error: false
+          configuration_path: .github/pr-title-checker-config.json
+  generate-files:
+    timeout-minutes: 20
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3
+        id: app-token
+        with:
+          app-id: ${{ vars.SKIM_RS_BOT_APP_ID }}
+          private-key: ${{ secrets.SKIM_RS_BOT_PRIVATE_KEY }}
+      - name: Checkout Git repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          ref: ${{github.event.pull_request.head.ref}}
+          repository: ${{github.event.pull_request.head.repo.full_name}}
+          token: ${{ steps.app-token.outputs.token }}
+      - run: rustup toolchain install
+      - name: Cache
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2
+      - name: Generate files
+        run: |
+          cargo run -- --man > man/man1/sk.1
+          cargo run -- --shell bash > shell/completion.bash
+          cargo run -- --shell zsh > shell/completion.zsh
+          cargo run -- --shell fish > shell/completion.fish
+          cargo run -- --shell nushell > shell/completion.nu
+      - name: Push modified files
+        run: |
+          git branch -v
+          git config user.email "skim-bot@skim-rs.github.io"
+          git config user.name "Skim bot"
+          git commit -am 'chore: generate completions & manpage' || exit 0
+          git push
